@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Web-kamera Tizimi</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 1.8rem;
+            color: #38bdf8;
+        }
+
+        .camera-card {
+            background-color: #1e293b;
+            padding: 20px;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 680px;
+            width: 100%;
+        }
+
+        .video-container {
+            width: 100%;
+            border-radius: 12px;
+            overflow: hidden;
+            background-color: #000;
+            aspect-ratio: 16 / 9;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* Oyna effekti (mirroring) */
+        }
+
+        .controls {
+            margin-top: 20px;
+            display: flex;
+            gap: 12px;
+        }
+
+        button {
+            background-color: #0284c7;
+            color: #ffffff;
+            border: none;
+            padding: 12px 24px;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s ease, transform 0.1s ease;
+        }
+
+        button:hover {
+            background-color: #0369a1;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        button.stop-btn {
+            background-color: #e11d48;
+        }
+
+        button.stop-btn:hover {
+            background-color: #be123c;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="camera-card">
+        <h1>Real-vaqt Web-kamera</h1>
+        
+        <div class="video-container">
+            <video id="webcam" autoplay playsinline></video>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn">Kamerani Yoqish</button>
+            <button id="stopBtn" class="stop-btn">O'chirish</button>
+        </div>
+
+        <p id="status">Kamerani ishga tushirish uchun tugmani bosing.</p>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const startBtn = document.getElementById('startBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const statusText = document.getElementById('status');
+        let streamInstance = null;
+
+        // Kamerani yoqish funksiyasi
+        async function startCamera() {
+            try {
+                // MediaDevices API orqali videoni olish
+                streamInstance = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: "user" 
+                    }, 
+                    audio: false 
+                });
+
+                video.srcObject = streamInstance;
+                statusText.textContent = "Kamera faol ishlamoqda.";
+                statusText.style.color = "#4ade80";
+            } catch (err) {
+                console.error("Xatolik:", err);
+                statusText.textContent = "Kameraga kirishga ruxsat berilmadi yoki kamera topilmadi.";
+                statusText.style.color = "#f87171";
+            }
+        }
+
+        // Kamerani o'chirish funksiyasi
+        function stopCamera() {
+            if (streamInstance) {
+                const tracks = streamInstance.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+                statusText.textContent = "Kamera o'chirildi.";
+                statusText.style.color = "#94a3b8";
+            }
+        }
+
+        startBtn.addEventListener('click', startCamera);
+        stopBtn.addEventListener('click', stopCamera);
+    </script>
+</body>
+</html>
