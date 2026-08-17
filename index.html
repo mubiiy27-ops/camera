@@ -3,7 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web-kamera Tizimi</title>
+    <title>MediaPipe: Havoda Chizish</title>
+    
+    <!-- MediaPipe CDN Kutubxonalari -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
     <style>
         * {
             box-sizing: border-box;
@@ -23,13 +28,7 @@
             padding: 20px;
         }
 
-        h1 {
-            margin-bottom: 20px;
-            font-size: 1.8rem;
-            color: #38bdf8;
-        }
-
-        .camera-card {
+        .container {
             background-color: #1e293b;
             padding: 20px;
             border-radius: 16px;
@@ -37,127 +36,221 @@
             display: flex;
             flex-direction: column;
             align-items: center;
-            max-width: 680px;
+            max-width: 720px;
             width: 100%;
         }
 
-        .video-container {
+        .stage {
+            position: relative;
             width: 100%;
+            aspect-ratio: 16 / 9;
             border-radius: 12px;
             overflow: hidden;
             background-color: #000;
-            aspect-ratio: 16 / 9;
-            position: relative;
         }
 
         video {
+            display: none; /* Kamera videosi canvas'ga chiziladi */
+        }
+
+        canvas {
             width: 100%;
             height: 100%;
-            object-fit: cover;
             transform: scaleX(-1); /* Oyna effekti (mirroring) */
         }
 
-        .controls {
-            margin-top: 20px;
+        .toolbar {
+            margin-top: 15px;
             display: flex;
+            flex-wrap: wrap;
             gap: 12px;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .status-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            background-color: #334155;
+            color: #38bdf8;
         }
 
         button {
-            background-color: #0284c7;
+            background-color: #e11d48;
             color: #ffffff;
             border: none;
-            padding: 12px 24px;
-            font-size: 1rem;
+            padding: 10px 20px;
+            font-size: 0.95rem;
             font-weight: 600;
             border-radius: 8px;
             cursor: pointer;
-            transition: background 0.2s ease, transform 0.1s ease;
+            transition: background 0.2s;
         }
 
         button:hover {
-            background-color: #0369a1;
-        }
-
-        button:active {
-            transform: scale(0.98);
-        }
-
-        button.stop-btn {
-            background-color: #e11d48;
-        }
-
-        button.stop-btn:hover {
             background-color: #be123c;
         }
 
-        #status {
+        .instructions {
             margin-top: 15px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             color: #94a3b8;
+            text-align: center;
+            line-height: 1.5;
         }
     </style>
 </head>
 <body>
 
-    <div class="camera-card">
-        <h1>Real-vaqt Web-kamera</h1>
+    <div class="container">
+        <h2>MediaPipe: Havoda Chizish</h2>
         
-        <div class="video-container">
-            <video id="webcam" autoplay playsinline></video>
+        <div class="stage">
+            <video id="webcam"></video>
+            <canvas id="outputCanvas"></canvas>
         </div>
 
-        <div class="controls">
-            <button id="startBtn">Kamerani Yoqish</button>
-            <button id="stopBtn" class="stop-btn">O'chirish</button>
+        <div class="toolbar">
+            <div id="status" class="status-badge">Model yuklanmoqda...</div>
+            <button id="clearBtn">Tozalash</button>
         </div>
 
-        <p id="status">Kamerani ishga tushirish uchun tugmani bosing.</p>
+        <div class="instructions">
+            ☝️ <b>Faqat ko'rsatkich barmoq:</b> Havoda chizish <br>
+            ✌️ <b>Ko'rsatkich + O'rta barmoq:</b> Kursor rejimi (chizmaydi)
+        </div>
     </div>
 
     <script>
-        const video = document.getElementById('webcam');
-        const startBtn = document.getElementById('startBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const statusText = document.getElementById('status');
-        let streamInstance = null;
+        const videoElement = document.getElementById('webcam');
+        const canvasElement = document.getElementById('outputCanvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusElement = document.getElementById('status');
+        const clearBtn = document.getElementById('clearBtn');
 
-        // Kamerani yoqish funksiyasi
-        async function startCamera() {
-            try {
-                // MediaDevices API orqali videoni olish
-                streamInstance = await navigator.mediaDevices.getUserMedia({ 
-                    video: { 
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 },
-                        facingMode: "user" 
-                    }, 
-                    audio: false 
-                });
+        // Chizmalarni saqlash uchun alohida vaqtinchalik Canvas
+        const paintCanvas = document.createElement('canvas');
+        const paintCtx = paintCanvas.getContext('2d');
 
-                video.srcObject = streamInstance;
-                statusText.textContent = "Kamera faol ishlamoqda.";
-                statusText.style.color = "#4ade80";
-            } catch (err) {
-                console.error("Xatolik:", err);
-                statusText.textContent = "Kameraga kirishga ruxsat berilmadi yoki kamera topilmadi.";
-                statusText.style.color = "#f87171";
-            }
+        let prevX = null;
+        let prevY = null;
+
+        function resizeCanvas() {
+            canvasElement.width = canvasElement.offsetWidth;
+            canvasElement.height = canvasElement.offsetHeight;
+            paintCanvas.width = canvasElement.offsetWidth;
+            paintCanvas.height = canvasElement.offsetHeight;
         }
 
-        // Kamerani o'chirish funksiyasi
-        function stopCamera() {
-            if (streamInstance) {
-                const tracks = streamInstance.getTracks();
-                tracks.forEach(track => track.stop());
-                video.srcObject = null;
-                statusText.textContent = "Kamera o'chirildi.";
-                statusText.style.color = "#94a3b8";
+        clearBtn.addEventListener('click', () => {
+            paintCtx.clearRect(0, 0, paintCanvas.width, paintCanvas.height);
+        });
+
+        // Ishlov berish funksiyasi (Har bir kadrda chaqiriladi)
+        function onResults(results) {
+            if (canvasElement.width === 0) resizeCanvas();
+
+            // 1. Orqa fonga kamera kadrini chizish
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            // 2. Qo'l nuqtalari aniqlangan bo'lsa
+            if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+                statusElement.textContent = "Qo'l aniqlandi";
+                statusElement.style.color = "#4ade80";
+
+                const landmarks = results.multiHandLandmarks[0];
+
+                // Landmark nuqtalari
+                const indexTip = landmarks[8];   // Ko'rsatkich barmoq uchi
+                const indexPip = landmarks[6];   // Ko'rsatkich barmoq bo'g'imi
+                const middleTip = landmarks[12]; // O'rta barmoq uchi
+                const middlePip = landmarks[10]; // O'rta barmoq bo me'yori
+
+                // Barmoqlarning ko'tarilganligini aniqlash
+                const isIndexUp = indexTip.y < indexPip.y;
+                const isMiddleUp = middleTip.y < middlePip.y;
+
+                // Koordinatalarni pikselga o'tkazish
+                const currX = indexTip.x * canvasElement.width;
+                const currY = indexTip.y * canvasElement.height;
+
+                if (isIndexUp && !isMiddleUp) {
+                    // CHIZISH REJIM (Faqat ko'rsatkich barmoq tepada)
+                    if (prevX !== null && prevY !== null) {
+                        paintCtx.beginPath();
+                        paintCtx.moveTo(prevX, prevY);
+                        paintCtx.lineTo(currX, currY);
+                        paintCtx.strokeStyle = "#38bdf8";
+                        paintCtx.lineWidth = 6;
+                        paintCtx.lineCap = "round";
+                        paintCtx.stroke();
+                    }
+                    prevX = currX;
+                    prevY = currY;
+
+                    // Ko'rsatkich nuqtasini chizish rejimida ko'rsatish
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(currX, currY, 8, 0, 2 * Math.PI);
+                    canvasCtx.fillStyle = "#38bdf8";
+                    canvasCtx.fill();
+
+                } else if (isIndexUp && isMiddleUp) {
+                    // KURSOR REJIMI (Ikkita barmoq tepada - chizmaydi)
+                    prevX = null;
+                    prevY = null;
+
+                    canvasCtx.beginPath();
+                    canvasCtx.arc(currX, currY, 10, 0, 2 * Math.PI);
+                    canvasCtx.fillStyle = "#f43f5e";
+                    canvasCtx.fill();
+                } else {
+                    prevX = null;
+                    prevY = null;
+                }
+            } else {
+                statusElement.textContent = "Qo'lingizni kameraga ko'rsating";
+                statusElement.style.color = "#38bdf8";
+                prevX = null;
+                prevY = null;
             }
+
+            // 3. Saqlangan chizmalarni kamera ustiga ustma-ust tushirish
+            canvasCtx.drawImage(paintCanvas, 0, 0);
+            canvasCtx.restore();
         }
 
-        startBtn.addEventListener('click', startCamera);
-        stopBtn.addEventListener('click', stopCamera);
+        // MediaPipe Hands sozlamalari
+        const hands = new Hands({
+            locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+        });
+
+        hands.setOptions({
+            maxNumHands: 1,
+            modelComplexity: 1,
+            minDetectionConfidence: 0.7,
+            minTrackingConfidence: 0.7
+        });
+
+        hands.onResults(onResults);
+
+        // Kamera oqimini ishga tushirish
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                await hands.send({ image: videoElement });
+            },
+            width: 1280,
+            height: 720
+        });
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('load', () => {
+            resizeCanvas();
+            camera.start();
+        });
     </script>
 </body>
 </html>
